@@ -12,6 +12,8 @@
     import Darwin
 #endif
 
+import Foundation
+
 // MARK: - App Protocol
 
 /// The base protocol for TUIkit applications.
@@ -185,10 +187,9 @@ extension AppRunner {
                 eventsProcessed += 1
             }
 
-            // Sleep ~24ms to yield CPU.
-            // This sets the maximum frame rate to ~42 FPS.
-            //
-            usleep(23_800)
+            // Yield ~24ms via RunLoop so pending @MainActor tasks and
+            // dispatch sources (e.g. IOKit notifications) can progress.
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.0238))
         }
 
         // Stop pulse timer before cleanup
