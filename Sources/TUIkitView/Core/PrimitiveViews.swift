@@ -159,3 +159,11 @@ extension ViewArray: Renderable, ChildInfoProvider {
         }
     }
 }
+
+extension ViewArray: ChildViewProvider {
+    public func childViews(context: RenderContext) -> [ChildView] {
+        elements.enumerated().map { index, element in
+            ChildView(element, childIndex: index)
+        }
+    }
+}
