@@ -37,13 +37,18 @@ extension ScrollView: Renderable {
     public func renderToBuffer(context: RenderContext) -> FrameBuffer {
         let availableHeight = context.availableHeight
 
-        // Render content at unlimited height to measure natural size.
+        // Render content with enough room to see its natural size.
+        // Don't use a huge value (like 10_000) because layout containers
+        // may pad to fill available height, inflating the buffer.
         var contentContext = context
-        contentContext.availableHeight = max(availableHeight, 10_000)
+        contentContext.availableHeight = max(availableHeight, availableHeight * 4)
         let fullBuffer = TUIkitView.renderToBuffer(content, context: contentContext)
 
+        // Trim trailing empty lines that layout padding may have added.
+        let trimmedHeight = Self.trimmedHeight(of: fullBuffer)
+
         // If content fits, return it directly.
-        if fullBuffer.height <= availableHeight {
+        if trimmedHeight <= availableHeight {
             return fullBuffer
         }
 
@@ -63,9 +68,12 @@ extension ScrollView: Renderable {
         )
         let handler = handlerBox.value
 
-        // Update handler with current dimensions.
-        handler.contentHeight = fullBuffer.height
-        handler.viewportHeight = max(1, availableHeight - 2)
+        // Reserve 1 line each for scroll indicators (shown conditionally).
+        let indicatorLines = 2
+        let viewport = max(1, availableHeight - indicatorLines)
+
+        handler.contentHeight = trimmedHeight
+        handler.viewportHeight = viewport
         handler.clampOffset()
 
         // Register for keyboard focus.
@@ -81,7 +89,7 @@ extension ScrollView: Renderable {
         }
 
         let start = handler.scrollOffset
-        let end = min(start + handler.viewportHeight, fullBuffer.height)
+        let end = min(start + viewport, trimmedHeight)
         outputLines.append(contentsOf: fullBuffer.lines[start..<end])
 
         if handler.hasContentBelow {
@@ -91,5 +99,15 @@ extension ScrollView: Renderable {
         }
 
         return FrameBuffer(lines: outputLines)
+    }
+
+    private static func trimmedHeight(of buffer: FrameBuffer) -> Int {
+        var height = buffer.height
+        while height > 0 {
+            let line = buffer.lines[height - 1]
+            if line.strippedLength > 0 { break }
+            height -= 1
+        }
+        return height
     }
 }
