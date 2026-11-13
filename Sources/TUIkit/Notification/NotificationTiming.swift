@@ -58,28 +58,6 @@ enum NotificationTiming {
     ///   - maxWidth: Maximum characters per line.
     /// - Returns: An array of wrapped lines (never empty).
     static func wordWrap(_ text: String, maxWidth: Int) -> [String] {
-        guard maxWidth > 0 else { return [text] }
-
-        let words = text.split(separator: " ", omittingEmptySubsequences: false)
-        var lines: [String] = []
-        var currentLine = ""
-
-        for word in words {
-            let wordStr = String(word)
-            if currentLine.isEmpty {
-                currentLine = wordStr
-            } else if currentLine.count + 1 + wordStr.count <= maxWidth {
-                currentLine += " " + wordStr
-            } else {
-                lines.append(currentLine)
-                currentLine = wordStr
-            }
-        }
-
-        if !currentLine.isEmpty {
-            lines.append(currentLine)
-        }
-
-        return lines.isEmpty ? [""] : lines
+        WordWrap.wrap(text, maxWidth: maxWidth)
     }
 }
