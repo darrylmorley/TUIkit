@@ -89,7 +89,7 @@ enum WordWrap {
         let wordString = String(word)
         // Every break opportunity inside a word is at a wide character, so a
         // word of narrow characters comes back whole (the common, fast case).
-        guard word.contains(where: { $0.terminalWidth > 1 }) else { return [wordString] }
+        guard word.contains(where: isWideBase) else { return [wordString] }
         let units = self.units(of: wordString)
         let hasCJK = units.contains { isCJK($0.character) }
         let breakAtEmoji = wordString.strippedLength > maxWidth
@@ -99,7 +99,7 @@ enum WordWrap {
         var run = ""
         for unit in units {
             let character = unit.character
-            let isBreakable = isCJK(character) || (breakAtEmoji && character.terminalWidth > 1)
+            let isBreakable = isCJK(character) || (breakAtEmoji && isWideBase(character))
             if isClosingPunctuation(character) {
                 // Keep with whatever came before, so no line starts with it.
                 if !run.isEmpty {
@@ -163,9 +163,18 @@ enum WordWrap {
         return units
     }
 
+    /// True when the character's first code point is itself two cells wide
+    /// (CJK or emoji). A Devanagari conjunct such as ट्रो can also measure
+    /// more than one cell, but it is several narrow letters, not a wide
+    /// character, and must not become a break point.
+    private static func isWideBase(_ character: Character) -> Bool {
+        guard let first = character.unicodeScalars.first else { return false }
+        return Character(first).terminalWidth > 1
+    }
+
     /// CJK characters, between which a line may break.
     private static func isCJK(_ character: Character) -> Bool {
-        guard character.terminalWidth > 1, let value = character.unicodeScalars.first?.value else { return false }
+        guard isWideBase(character), let value = character.unicodeScalars.first?.value else { return false }
         // Wide, and not in the emoji and symbols planes.
         return !(0x1F000...0x1FBFF).contains(value)
     }

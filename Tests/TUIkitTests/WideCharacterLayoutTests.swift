@@ -275,6 +275,14 @@ struct WideCharacterExactColumnTests {
         #expect(NotificationTiming.wordWrap("hello👋 there", maxWidth: 7) == ["hello👋", "there"])
     }
 
+    /// A Devanagari conjunct cluster can measure more than one cell (ट्रो is
+    /// 3), but it is narrow letters inside a word, not a break point.
+    @Test("A Hindi word with conjuncts is not split")
+    func hindiWordNotSplit() {
+        #expect(NotificationTiming.wordWrap("कोई Thunderbolt कंट्रोलर नहीं", maxWidth: 20)
+                == ["कोई Thunderbolt", "कंट्रोलर नहीं"])
+    }
+
     @Test("A line never starts with closing CJK punctuation")
     func closingPunctuation() {
         #expect(NotificationTiming.wordWrap("你好。", maxWidth: 4) == ["你", "好。"])
