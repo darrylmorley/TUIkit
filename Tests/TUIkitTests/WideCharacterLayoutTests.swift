@@ -24,7 +24,7 @@ struct WideCharacterLayoutTests {
 
     // MARK: - Display width helper
 
-    @Test("Character width: CJK is 2, combining clusters take the base width")
+    @Test("Character width: CJK is 2, combining marks add nothing")
     func characterWidths() {
         #expect(Character("端").terminalWidth == 2)
         #expect(Character("가").terminalWidth == 2)
@@ -130,5 +130,153 @@ struct WideCharacterLayoutTests {
         for line in lines {
             #expect(line.strippedLength <= 10, "line \"\(line)\" is \(line.strippedLength) columns, limit 10")
         }
+    }
+}
+
+// MARK: - Exact columns
+
+/// Columns of plain text, counted independently of `terminalWidth`: every
+/// character is one column, plus one more for each CJK character. Only used
+/// on strings made of ASCII, box drawing and CJK.
+private func referenceColumns(_ line: String) -> Int {
+    let plain = line.replacingOccurrences(of: "\u{1B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
+    let wide = plain.unicodeScalars.filter { scalar in
+        let value = scalar.value
+        return (0x3040...0x30FF).contains(value) || (0x4E00...0x9FFF).contains(value)
+            || (0xAC00...0xD7A3).contains(value) || (0xFF01...0xFF60).contains(value)
+    }.count
+    return plain.count + wide
+}
+
+/// Each test renders a CJK view and an ASCII twin whose text has the same
+/// display width, then checks that every CJK row takes exactly as many
+/// columns as the twin's rows. The twin's columns are its character count
+/// (all narrow), so nothing here leans on the width helper under test.
+@MainActor
+@Suite("Wide character layout, exact columns")
+struct WideCharacterExactColumnTests {
+
+    private func context(width: Int) -> RenderContext {
+        RenderContext(availableWidth: width, availableHeight: 24, tuiContext: TUIContext())
+    }
+
+    private func render<V: View>(_ view: V, width: Int = 40) -> [String] {
+        renderToBuffer(view, context: context(width: width)).lines
+    }
+
+    /// The twin's rows, all one width; returns that width.
+    private func twinWidth(_ lines: [String]) -> Int {
+        let widths = Set(lines.map { referenceColumns($0) })
+        #expect(widths.count == 1, "ASCII twin is ragged: \(lines.map(\.stripped))")
+        return widths.first ?? -1
+    }
+
+    private func expectColumns(_ lines: [String], equal width: Int, _ what: String) {
+        #expect(!lines.isEmpty)
+        for line in lines {
+            #expect(referenceColumns(line) == width,
+                    "\(what): \"\(line.stripped)\" is \(referenceColumns(line)) columns, expected \(width)")
+        }
+    }
+
+    @Test("Panel with a CJK title")
+    func panel() {
+        let width = twinWidth(render(Panel("abcdefghij") { Text("x") }))
+        expectColumns(render(Panel("电源监视器") { Text("x") }), equal: width, "Panel")
+    }
+
+    @Test("Menu with a CJK item")
+    func menu() {
+        let width = twinWidth(render(Menu(items: [MenuItem(label: "Power"), MenuItem(label: "abcdefgh")])))
+        expectColumns(render(Menu(items: [MenuItem(label: "Power"), MenuItem(label: "协商诊断")])), equal: width, "Menu")
+    }
+
+    @Test("Dimmed CJK text")
+    func dimmed() {
+        let width = twinWidth(render(Text("abcd").dimmed(), width: 20))
+        expectColumns(render(Text("端口").dimmed(), width: 20), equal: width, "Dimmed")
+    }
+
+    @Test("List row with a CJK badge")
+    func listBadge() {
+        struct Item: Identifiable { let id: String }
+        func list(_ badge: String) -> some View {
+            List(selection: Binding<String?>(get: { nil }, set: { _ in })) {
+                ForEach([Item(id: "a")]) { _ in Text("row").badge(badge) }
+            }
+        }
+        let twin = render(list("abcd"), width: 30)
+        let cjk = render(list("端口"), width: 30)
+        #expect(cjk.contains { $0.stripped.contains("端口") }, "badge not rendered: \(cjk.map(\.stripped))")
+        #expect(twin.count == cjk.count)
+        for (a, b) in zip(twin, cjk) {
+            #expect(referenceColumns(b) == referenceColumns(a),
+                    "badge row \"\(b.stripped)\" is \(referenceColumns(b)) columns, twin \"\(a.stripped)\" is \(referenceColumns(a))")
+        }
+    }
+
+    @Test("Scroll indicator is centred in its width")
+    func scrollIndicator() {
+        let line = renderScrollIndicator(direction: .up, width: 30, palette: EnvironmentValues().palette).stripped
+        // "▲ more above " is 13 columns; (30 - 13) / 2 = 8 spaces before it.
+        #expect(line == String(repeating: " ", count: 8) + "▲ more above ")
+    }
+
+    @Test("Unfocused TextField with a CJK prompt")
+    func textFieldPrompt() {
+        // The first field takes focus, so the second one is unfocused and
+        // shows its prompt.
+        func fields(_ prompt: String) -> some View {
+            VStack {
+                TextField("First", text: Binding(get: { "" }, set: { _ in }))
+                TextField("Name", text: Binding(get: { "" }, set: { _ in }), prompt: Text(prompt))
+            }
+        }
+        let twin = render(fields("abcdefghij"), width: 30)
+        let cjk = render(fields("请输入名称"), width: 30)
+        let promptRow = cjk.firstIndex { $0.stripped.contains("请输入名称") }
+        #expect(promptRow != nil, "prompt not rendered: \(cjk.map(\.stripped))")
+        if let row = promptRow, row < twin.count {
+            #expect(referenceColumns(cjk[row]) == referenceColumns(twin[row]),
+                    "prompt row \"\(cjk[row].stripped)\" is \(referenceColumns(cjk[row])) columns, twin \(referenceColumns(twin[row]))")
+        }
+    }
+
+    // MARK: Character widths (Kuhn/glibc wcwidth rule)
+
+    @Test("Cluster widths: sums of code points, emoji sequences 2")
+    func clusterWidths() {
+        #expect(Character("\u{0915}\u{094D}\u{0937}").terminalWidth == 2)   // क्ष: ka, virama, ssa
+        #expect(Character("\u{0E01}\u{0E33}").terminalWidth == 2)           // Thai กำ (SARA AM)
+        #expect(Character("\u{FF76}\u{FF9E}").terminalWidth == 2)           // halfwidth ｶﾞ
+        #expect(Character("e\u{0301}").terminalWidth == 1)                  // é, decomposed
+        #expect(Character("\u{0915}\u{093F}").terminalWidth == 2)           // कि: vowel sign is Mc = 1
+        #expect(Character("👨‍👩‍👧").terminalWidth == 2)                         // ZWJ family
+        #expect(Character("🏳️‍🌈").terminalWidth == 2)                          // text-default base + ZWJ
+        #expect(Character("\u{1100}\u{1161}\u{11A8}").terminalWidth == 2)   // hangul L+V+T jamo
+        #expect(Character("\u{0600}1").terminalWidth == 1)                  // prepended mark + digit
+    }
+
+    // MARK: Wrapping edge cases (through notifications' wrapper)
+
+    @Test("A wide character at width 1 goes on its own line")
+    func wideAtWidthOne() {
+        #expect(NotificationTiming.wordWrap("端口", maxWidth: 1) == ["端", "口"])
+    }
+
+    @Test("A colour code travels with the text after a wrap")
+    func escapeTravels() {
+        let lines = NotificationTiming.wordWrap("端\u{1B}[31m口", maxWidth: 2)
+        #expect(lines == ["端", "\u{1B}[31m口"])
+    }
+
+    @Test("An emoji stuck to a word does not split it when it fits")
+    func emojiStaysWithWord() {
+        #expect(NotificationTiming.wordWrap("hello👋 there", maxWidth: 7) == ["hello👋", "there"])
+    }
+
+    @Test("A line never starts with closing CJK punctuation")
+    func closingPunctuation() {
+        #expect(NotificationTiming.wordWrap("你好。", maxWidth: 4) == ["你", "好。"])
     }
 }
