@@ -17,6 +17,9 @@ extension Character {
         guard let first = scalars.first else { return 0 }
         let scalarValue = first.value
 
+        // Fast path: a lone printable ASCII character.
+        if scalarValue >= 0x20 && scalarValue < 0x7F && scalars.count == 1 { return 1 }
+
         // Zero-width characters
         if scalarValue == 0x200B || scalarValue == 0x200C || scalarValue == 0x200D || scalarValue == 0xFEFF { return 0 } // ZW space/NJ/J/BOM
         if scalarValue == 0x00AD { return 0 } // soft hyphen
@@ -29,22 +32,39 @@ extension Character {
         if (0xFE20...0xFE2F).contains(scalarValue) { return 0 } // combining half marks
         if (0xE0000...0xE007F).contains(scalarValue) { return 0 } // tags block
 
-        // Multi-scalar grapheme clusters (emoji sequences with ZWJ, skin tones,
-        // flag sequences, keycap sequences) are typically 2 cells wide.
+        // Format characters (bidi marks such as U+200E/U+200F/U+061C, word
+        // joiners) and nonspacing/enclosing marks take no cell on their own.
+        switch first.properties.generalCategory {
+        case .format, .nonspacingMark, .enclosingMark:
+            if scalars.count == 1 { return 0 }
+        default:
+            break
+        }
+
+        // Multi-scalar grapheme clusters.
         if scalars.count > 1 {
-            // If the only extra scalars are variation selectors (U+FE0F/U+FE0E),
-            // fall through to the base character width check. Many terminals
-            // don't widen characters just because of a presentation selector
-            // (e.g. ⚙️ = U+2699 + U+FE0F is still 1 cell in most terminals).
-            let hasNonVariationExtras = scalars.dropFirst().contains { scalar in
-                let sv = scalar.value
-                return !(0xFE00...0xFE0F).contains(sv) && !(0xE0100...0xE01EF).contains(sv)
-            }
-            if hasNonVariationExtras {
-                // True multi-character sequence (ZWJ, flags, keycaps, skin tones)
-                return 2
-            }
-            // Just base + variation selector(s): fall through to base char width
+            let extras = scalars.dropFirst()
+            // Emoji sequences (ZWJ families, skin tones, flags, keycaps, tag
+            // sequences) are drawn as one two-cell glyph.
+            let isEmojiSequence = (0x1F1E6...0x1F1FF).contains(scalarValue)
+                || extras.contains { scalar in
+                    let sv = scalar.value
+                    return sv == 0x200D                          // zero-width joiner
+                        || sv == 0x20E3                          // combining enclosing keycap
+                        || (0x1F3FB...0x1F3FF).contains(sv)      // skin tone modifiers
+                        || (0x1F1E6...0x1F1FF).contains(sv)      // regional indicators
+                        || (0xE0020...0xE007F).contains(sv)      // tag sequences
+                }
+            if isEmojiSequence { return 2 }
+
+            // A base character plus combining marks or variation selectors
+            // (e + U+0301, Devanagari consonant + vowel sign, Hangul jamo
+            // L+V+T, ⚙ + U+FE0F): the base's own width, plus one cell for each
+            // spacing combining mark, as wcwidth counts them. Nonspacing marks,
+            // variation selectors and conjoining jamo add nothing.
+            let base = Character(first).terminalWidth
+            let spacingMarks = extras.filter { $0.properties.generalCategory == .spacingMark }.count
+            return base + spacingMarks
         }
 
         // East Asian Wide and Fullwidth characters (2 cells)

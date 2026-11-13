@@ -199,7 +199,7 @@ extension Text: Renderable, Layoutable {
         let maxWidth = proposal.width ?? context.availableWidth
         let wrappedLines = wordWrap(content, maxWidth: maxWidth)
 
-        let width = wrappedLines.map(\.count).max() ?? 0
+        let width = wrappedLines.map(\.strippedLength).max() ?? 0
         let height = wrappedLines.count
 
         // Text is never flexible - it has a fixed size
@@ -228,38 +228,9 @@ extension Text: Renderable, Layoutable {
         return FrameBuffer(lines: styledLines)
     }
 
-    /// Wraps text into lines that fit a maximum character width.
-    ///
-    /// Splits on word boundaries (spaces). Words longer than `maxWidth`
-    /// are placed on their own line without further splitting.
-    ///
-    /// - Parameters:
-    ///   - text: The text to wrap.
-    ///   - maxWidth: Maximum characters per line.
-    /// - Returns: An array of wrapped lines (never empty).
+    /// Wraps text into lines that fit a maximum width in terminal cells.
+    /// See ``WordWrap``.
     private func wordWrap(_ text: String, maxWidth: Int) -> [String] {
-        guard maxWidth > 0 else { return [text] }
-
-        let words = text.split(separator: " ", omittingEmptySubsequences: false)
-        var lines: [String] = []
-        var currentLine = ""
-
-        for word in words {
-            let wordStr = String(word)
-            if currentLine.isEmpty {
-                currentLine = wordStr
-            } else if currentLine.count + 1 + wordStr.count <= maxWidth {
-                currentLine += " " + wordStr
-            } else {
-                lines.append(currentLine)
-                currentLine = wordStr
-            }
-        }
-
-        if !currentLine.isEmpty {
-            lines.append(currentLine)
-        }
-
-        return lines.isEmpty ? [""] : lines
+        WordWrap.wrap(text, maxWidth: maxWidth)
     }
 }

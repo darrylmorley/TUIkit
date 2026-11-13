@@ -31,7 +31,7 @@ func renderScrollIndicator(direction: ScrollDirection, width: Int, palette: any 
     let styledArrow = ANSIRenderer.colorize(arrow, foreground: palette.foregroundTertiary)
     let styledLabel = ANSIRenderer.colorize(label, foreground: palette.foregroundTertiary)
 
-    let indicatorWidth = 1 + label.count
+    let indicatorWidth = 1 + label.strippedLength
     let padding = max(0, (width - indicatorWidth) / 2)
 
     return String(repeating: " ", count: padding) + styledArrow + styledLabel

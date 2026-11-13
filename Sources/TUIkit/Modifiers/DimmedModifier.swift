@@ -95,7 +95,9 @@ extension DimmedModifier: Renderable {
     private func flattenLine(_ line: String, foreground: Color, background: Color, width: Int) -> String {
         let stripped = line.stripped
         let cleaned = String(stripped.map { DimmedOrnaments.characters.contains($0) ? " " : $0 })
-        let paddedText = cleaned.padding(toLength: width, withPad: " ", startingAt: 0)
+        // Pad or cut to `width` terminal cells (not UTF-16 units, which is
+        // what `padding(toLength:)` counts).
+        let paddedText = cleaned.ansiAwarePrefix(visibleCount: width).padToVisibleWidth(width)
 
         var style = TextStyle()
         style.foregroundColor = foreground

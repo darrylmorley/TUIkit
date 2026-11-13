@@ -78,8 +78,9 @@ struct TextFieldContentRenderer {
         } else {
             promptText = ""
         }
-        let truncated = String(promptText.prefix(width))
-        let paddedPrompt = truncated.padding(toLength: width, withPad: " ", startingAt: 0)
+        // Cut and pad by terminal cells, so a CJK prompt fills the field
+        // exactly instead of overflowing it.
+        let paddedPrompt = promptText.ansiAwarePrefix(visibleCount: width).padToVisibleWidth(width)
         return ANSIRenderer.colorize(paddedPrompt, foreground: palette.foregroundTertiary, background: background)
     }
 
@@ -87,12 +88,18 @@ struct TextFieldContentRenderer {
 
     /// Builds text content without cursor (unfocused state).
     private func buildTextContent(text: String, palette: any Palette, background: Color, width: Int) -> String {
-        let visibleCount = min(text.count, width)
+        // Fill by terminal cells: a wide character that would cross the
+        // field's right edge is left out rather than drawn across it.
         var displayText = ""
-        for i in 0..<visibleCount {
-            displayText.append(displayCharacter(i, text))
+        var usedWidth = 0
+        for i in 0..<text.count {
+            let character = displayCharacter(i, text)
+            let characterWidth = character.terminalWidth
+            if usedWidth + characterWidth > width { break }
+            displayText.append(character)
+            usedWidth += characterWidth
         }
-        let paddedText = displayText.padding(toLength: width, withPad: " ", startingAt: 0)
+        let paddedText = displayText.padToVisibleWidth(width)
         let foreground = isDisabled ? palette.foregroundTertiary : palette.foreground
         return ANSIRenderer.colorize(paddedText, foreground: foreground, background: background)
     }
